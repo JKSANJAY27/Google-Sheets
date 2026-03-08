@@ -8,6 +8,7 @@ type TokenType =
     | 'MINUS'
     | 'STAR'
     | 'SLASH'
+    | 'COMPARE'
     | 'LPAREN'
     | 'RPAREN'
     | 'COMMA'
@@ -62,6 +63,14 @@ function tokenize(src: string): Token[] {
             tokens.push({ type: 'STRING', value: str })
             continue
         }
+        if (ch === '>' || ch === '<' || ch === '=') {
+            let op = ch
+            if (src[i + 1] === '=') { op += '='; i++ }
+            else if (ch === '<' && src[i + 1] === '>') { op += '>'; i++ }
+            tokens.push({ type: 'COMPARE', value: op })
+            i++
+            continue
+        }
         const simple: Record<string, TokenType> = { '+': 'PLUS', '-': 'MINUS', '*': 'STAR', '/': 'SLASH', '(': 'LPAREN', ')': 'RPAREN', ',': 'COMMA' }
         if (simple[ch]) { tokens.push({ type: simple[ch], value: ch }); i++; continue }
         i++
@@ -93,7 +102,13 @@ class Parser {
     }
 
     private parseExpr(): ASTNode {
-        return this.parseAddSub()
+        let left = this.parseAddSub()
+        if (this.peek().type === 'COMPARE') {
+            const op = this.consume().value
+            const right = this.parseAddSub()
+            left = { type: 'binop', op, left, right }
+        }
+        return left
     }
 
     private parseAddSub(): ASTNode {

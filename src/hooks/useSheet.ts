@@ -26,10 +26,16 @@ const defaultFormat = () => ({
 
 function recompute(cells: CellMap): CellMap {
     const next: CellMap = { ...cells }
-    const order = buildEvalOrder(next)
+    const { order, cycles } = buildEvalOrder(next)
     for (const id of order) {
         const cell = next[id]
         if (!cell) continue
+
+        if (cycles.has(id)) {
+            next[id] = { ...cell, computed: '#CYCLE!' }
+            continue
+        }
+
         if (cell.formula.startsWith('=')) {
             try {
                 const ast = parseFormula(cell.formula)
@@ -85,19 +91,34 @@ export function useSheet(docId: string) {
             saveTimer.current = setTimeout(async () => {
                 try {
                     const cellRef = doc(db, 'documents', docId, 'cells', cellId)
-                    const existing = (await getDoc(cellRef)).data()
+                    let existingData: CellData | undefined
+
+                    try {
+                        const snap = await getDoc(cellRef)
+                        existingData = snap.data() as CellData | undefined
+                    } catch {
+                        existingData = undefined
+                    }
+
                     await setDoc(cellRef, {
                         value,
                         formula: value,
                         computed: value,
-                        format: existing?.format ?? defaultFormat(),
+                        format: existingData?.format ?? defaultFormat(),
                     })
-                    await updateDoc(doc(db, 'documents', docId), {
-                        updatedAt: serverTimestamp(),
-                    })
+
+                    try {
+                        await updateDoc(doc(db, 'documents', docId), {
+                            updatedAt: serverTimestamp(),
+                        })
+                    } catch {
+                        // Document might not exist or we don't have permission to update its timestamp, which is fine
+                    }
+
                     pendingRef.current--
                     if (pendingRef.current === 0) setWriteStatus('saved')
                 } catch {
+                    pendingRef.current--
                     setWriteStatus('error')
                 }
             }, 400)

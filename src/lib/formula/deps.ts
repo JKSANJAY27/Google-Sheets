@@ -32,17 +32,21 @@ function getDependencies(formula: string): string[] {
     }
 }
 
-export function buildEvalOrder(cells: CellMap): string[] {
+export function buildEvalOrder(cells: CellMap): { order: string[]; cycles: Set<string> } {
     const deps: Record<string, string[]> = {}
     for (const cellId of Object.keys(cells)) {
         deps[cellId] = getDependencies(cells[cellId].formula)
     }
 
     const visited = new Set<string>()
+    const cycles = new Set<string>()
     const order: string[] = []
 
     function visit(id: string, path: Set<string>) {
-        if (path.has(id)) return
+        if (path.has(id)) {
+            for (const p of path) cycles.add(p)
+            return
+        }
         if (visited.has(id)) return
         path.add(id)
         for (const dep of deps[id] ?? []) {
@@ -57,5 +61,5 @@ export function buildEvalOrder(cells: CellMap): string[] {
         visit(id, new Set())
     }
 
-    return order
+    return { order, cycles }
 }

@@ -30,13 +30,7 @@ export function evaluateAST(node: ASTNode, cells: CellMap, visiting: Set<string>
     }
 
     if (node.type === 'cellRange') {
-        const refs = expandRange(node.from, node.to)
-        return refs.map((ref) => {
-            const cell = cells[ref]
-            if (!cell) return 0
-            const n = parseFloat(String(cell.computed))
-            return isNaN(n) ? 0 : n
-        }).reduce((a, b) => a + b, 0)
+        return '#VALUE!'
     }
 
     if (node.type === 'unary') {
@@ -49,7 +43,13 @@ export function evaluateAST(node: ASTNode, cells: CellMap, visiting: Set<string>
         const l = evaluateAST(node.left, cells, visiting)
         const r = evaluateAST(node.right, cells, visiting)
         if (typeof l === 'string' || typeof r === 'string') {
-            if (node.op === '+' && typeof l === 'string' && typeof r === 'string') return l + r
+            if (node.op === '+') return String(l) + String(r)
+            if (node.op === '=') return l === r ? 1 : 0
+            if (node.op === '<>') return l !== r ? 1 : 0
+            if (node.op === '>') return l > r ? 1 : 0
+            if (node.op === '<') return l < r ? 1 : 0
+            if (node.op === '>=') return l >= r ? 1 : 0
+            if (node.op === '<=') return l <= r ? 1 : 0
             return '#ERROR!'
         }
         if (node.op === '+') return l + r
@@ -59,52 +59,56 @@ export function evaluateAST(node: ASTNode, cells: CellMap, visiting: Set<string>
             if (r === 0) return '#DIV/0!'
             return l / r
         }
+        if (node.op === '=') return l === r ? 1 : 0
+        if (node.op === '<>') return l !== r ? 1 : 0
+        if (node.op === '>') return l > r ? 1 : 0
+        if (node.op === '<') return l < r ? 1 : 0
+        if (node.op === '>=') return l >= r ? 1 : 0
+        if (node.op === '<=') return l <= r ? 1 : 0
         return '#ERROR!'
     }
 
     if (node.type === 'call') {
         const name = node.name
-        if (name === 'SUM') {
-            let total = 0
+
+        // Aggregation functions flatten their arguments (specifically cell ranges)
+        if (['SUM', 'AVERAGE', 'MAX', 'MIN', 'COUNT'].includes(name)) {
+            const vals: (number | string)[] = []
             for (const arg of node.args) {
-                const v = evaluateAST(arg, cells, visiting)
-                if (typeof v === 'number') total += v
-                else if (typeof v === 'string' && !v.startsWith('#')) total += parseFloat(v) || 0
+                if (arg.type === 'cellRange') {
+                    const refs = expandRange(arg.from, arg.to)
+                    for (const ref of refs) {
+                        const val = evaluateAST({ type: 'cellRef', ref }, cells, visiting)
+                        vals.push(val)
+                    }
+                } else {
+                    vals.push(evaluateAST(arg, cells, visiting))
+                }
             }
-            return total
-        }
-        if (name === 'AVERAGE') {
-            const vals: number[] = []
-            for (const arg of node.args) {
-                const v = evaluateAST(arg, cells, visiting)
-                if (typeof v === 'number') vals.push(v)
+            if (name === 'SUM') {
+                let total = 0
+                for (const v of vals) {
+                    if (typeof v === 'number') total += v
+                    else if (typeof v === 'string' && !v.startsWith('#')) total += parseFloat(v) || 0
+                }
+                return total
             }
-            if (vals.length === 0) return '#DIV/0!'
-            return vals.reduce((a, b) => a + b, 0) / vals.length
-        }
-        if (name === 'MAX') {
-            const vals: number[] = []
-            for (const arg of node.args) {
-                const v = evaluateAST(arg, cells, visiting)
-                if (typeof v === 'number') vals.push(v)
+            if (name === 'AVERAGE') {
+                const nums = vals.filter(v => typeof v === 'number') as number[]
+                if (nums.length === 0) return '#DIV/0!'
+                return nums.reduce((a, b) => a + b, 0) / nums.length
             }
-            return vals.length ? Math.max(...vals) : 0
-        }
-        if (name === 'MIN') {
-            const vals: number[] = []
-            for (const arg of node.args) {
-                const v = evaluateAST(arg, cells, visiting)
-                if (typeof v === 'number') vals.push(v)
+            if (name === 'MAX') {
+                const nums = vals.filter(v => typeof v === 'number') as number[]
+                return nums.length ? Math.max(...nums) : 0
             }
-            return vals.length ? Math.min(...vals) : 0
-        }
-        if (name === 'COUNT') {
-            let count = 0
-            for (const arg of node.args) {
-                const v = evaluateAST(arg, cells, visiting)
-                if (typeof v === 'number') count++
+            if (name === 'MIN') {
+                const nums = vals.filter(v => typeof v === 'number') as number[]
+                return nums.length ? Math.min(...nums) : 0
             }
-            return count
+            if (name === 'COUNT') {
+                return vals.filter(v => typeof v === 'number').length
+            }
         }
         if (name === 'IF') {
             if (node.args.length < 2) return '#ERROR!'

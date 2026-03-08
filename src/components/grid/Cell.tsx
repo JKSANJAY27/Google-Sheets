@@ -37,13 +37,16 @@ export default function Cell({
     const inputRef = useRef<HTMLInputElement>(null)
     const [draft, setDraft] = useState(data?.formula ?? '')
 
+    const commitRef = useRef(false)
+
     useEffect(() => {
         if (isEditing && inputRef.current) {
-            setDraft(data?.formula ?? '')
+            commitRef.current = false
             inputRef.current.focus()
-            inputRef.current.select()
+            const len = inputRef.current.value.length
+            inputRef.current.setSelectionRange(len, len)
         }
-    }, [isEditing, data?.formula])
+    }, [isEditing])
 
     useEffect(() => {
         if (!isEditing) {
@@ -58,16 +61,24 @@ export default function Cell({
             : (data.computed ?? data.value ?? '')
         : ''
 
+    const doCommit = (val: string) => {
+        if (commitRef.current) return
+        commitRef.current = true
+        onCommit(val)
+    }
+
     function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-        if (e.key === 'Enter') { e.preventDefault(); onCommit(draft) }
-        if (e.key === 'Tab') { e.preventDefault(); onCommit(draft); onTabOut() }
+        e.stopPropagation()
+        if (e.key === 'Enter') { e.preventDefault(); doCommit(draft) }
+        if (e.key === 'Tab') { e.preventDefault(); doCommit(draft); onTabOut() }
         if (e.key === 'Escape') { onEscape() }
     }
 
     function handleCellKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
         if (e.key === 'Delete' || e.key === 'Backspace') {
-            onCommit('')
+            doCommit('')
         } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+            e.preventDefault()
             setDraft(e.key)
             onStartEdit()
         }
@@ -99,7 +110,7 @@ export default function Cell({
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    onBlur={() => onCommit(draft)}
+                    onBlur={() => doCommit(draft)}
                     className="absolute inset-0 w-full h-full px-1 outline-none border-none bg-white text-gray-900 z-10"
                     style={{
                         fontSize: fmt?.fontSize ?? 14,

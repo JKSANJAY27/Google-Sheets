@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, updateDoc, serverTimestamp, getDoc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { useAuth } from '@/context/AuthContext'
@@ -93,6 +93,25 @@ function SheetEditorInner({
 }: InnerProps) {
     const { cells, writeStatus, updateCell, updateFormat } = useSheet(docId)
     const { presences, updateActiveCell } = usePresence(docId, uid, displayName)
+    const [fetchedTitle, setFetchedTitle] = useState(false)
+
+    useEffect(() => {
+        if (!docId) return
+        const fetchTitle = async () => {
+            try {
+                const snap = await getDoc(doc(db, 'documents', docId))
+                const data = snap.data()
+                if (data?.title) {
+                    setDocTitle(data.title)
+                }
+            } catch (e) {
+                console.error(e)
+            } finally {
+                setFetchedTitle(true)
+            }
+        }
+        fetchTitle()
+    }, [docId, setDocTitle])
 
     const handleCellSelect = useCallback(
         (cellId: string) => {
